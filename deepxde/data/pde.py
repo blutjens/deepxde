@@ -80,7 +80,6 @@ class PDE(Data):
         self.train_distribution = train_distribution
         self.anchors = anchors
         self.exclusions = exclusions
-
         self.soln = solution
         self.num_test = num_test
 
