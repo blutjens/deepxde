@@ -1,11 +1,11 @@
 ## Installation
 
 ```
-conda create --name deepxde
+conda create --name deepxde python
 conda activate deepxde
+cd deepxde
 pip install -r requirements.txt
-cd ..
-pip install ./deepxde
+pip install -e .
 ```
 
 ## Run Lorenz96
