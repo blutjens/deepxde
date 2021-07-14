@@ -107,8 +107,6 @@ class Lorenz96Eq():
             raise NotImplementedError("Parametrization " + parametrization + " not implemented.")
 
         # Calculate dynamics
-        if verbose:
-            import pdb;pdb.set_trace()
         dx_t = tf.multiply(tf.gather(x,self.minus),(tf.gather(x,self.plus) - tf.gather(x,self.minus2))) - x + self.F + x_param
         if parametrization == 'null':
             dy_t = tf.zeros((self.J, self.K))
@@ -132,14 +130,17 @@ class Lorenz96Eq():
         """
         # Compute target time derivates with PDEs
         # TODO: Do I need to normalize target_dx_t with dt?
-        target_dx_t, target_dy_t, target_dz_t = self.step(x, y=None, z=None, parametrization=parametrization, verbose=True)
-
-        import pdb; pdb.set_trace()
+        # TODO: !! make this function work for batch inputs !!
+        target_dx_t, target_dy_t, target_dz_t = self.step(x, y=None, z=None, parametrization=parametrization)
+        target_dx_t = tf.multiply(tf.ones_like(x),target_dx_t)
+        
         # Compute predicted time derivatives
-        ##################################
-        # TODO: start here: Why does dde.grad.jacobian return shape(1) instead of shape(self.K) tensor?
-        ##################################
-        dx_t = dde.grad.jacobian(x, t)        
+        dx_t = []
+        for k in range(self.K): # TODO calculate jacobian as matrix and not per element..
+            dx_t.append(dde.grad.jacobian(x[:,k:k+1], t))
+        dx_t = tf.stack(dx_t, axis=1)
+        dx_t = tf.squeeze(dx_t, axis=2)
+
         resx = dx_t - target_dx_t
 
         return [resx]
@@ -166,7 +167,39 @@ class Lorenz96Eq():
         target_dx_t,target_dy_t,target_dz_t = self.step(x,y,t, parametrization=parametrization)
         
         # Compute estimated time derivatives with NN
+        print('THIS FN DOES NOT WORK YET')
         import pdb;pdb.set_trace()
+        # self.J[i] = tf.gradients(y, self.xs)[0]
+        self.K = 2
+        self.J = 3
+        self.I = 4
+        x = x[:,:self.K]
+        y = y[:,:self.J,:self.K]
+        z = z[:,:self.I,:self.J,:self.K]
+        print('x,y,z', x.shape, y.shape, z.shape)
+        dx_t = []
+        dy_t = []
+        dz_t = []
+        for k in range(self.K):
+            dx_t.append(dde.grad.jacobian(x[:,k], t))
+            for j in range(self.J):
+                dy_t.append(dde.grad.jacobian(y[:,j,k], t))
+                for i in range(self.I):
+                    dz_t.append(dde.grad.jacobian(z[:,i,j,k], t))
+        dx_t = tf.stack(dx_t)
+        dy_t = tf.stack(y_t)
+        dz_t = tf.stack(z_t)
+        print('dx,dy,dz', dx_t.shape, dy_t.shape, dz_t.shape)
+
+        dx_t = dde.grad.jacobian(x, t)
+        y = tf.Flatten(y)
+        dy_t = dde.grad.jacobian(y, t)
+        dy_t = dy_t.reshape(self.J,self.K)
+        z = tf.Flatten(z)
+        dz_t = dde.grad.jacobian(z, t) 
+        dz_t = dz_t.reshape(self.I,self.J,self.K)
+
+
         dx_t = dde.grad.jacobian(x, t)
         y = tf.Flatten(y)
         dy_t = dde.grad.jacobian(y, t)

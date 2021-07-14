@@ -309,9 +309,14 @@ class Model(object):
                 self.train_state.y_train,
                 self.train_state.train_aux_vars,
             )
+            import pdb;pdb.set_trace()
+            ###
+            # TODO START HERE TO DECODE. Do so by comparies losses and self.net.outputs in Lorenz.inverse.py
+            ###
             self.train_state.loss_train, self.train_state.y_pred_train = self.sess.run(
                 [self.losses, self.net.outputs], feed_dict=feed_dict
             )
+
         elif backend_name == "tensorflow":
             outputs = self.net(self.train_state.X_train, training=False)
             self.train_state.loss_train = self.losses(
