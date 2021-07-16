@@ -74,7 +74,7 @@ class Lorenz96Eq():
 
     def step(self, x, y, z, parametrization='resolved', verbose=False):
         """
-        Compute 1st time derivative in tf2
+        Compute 1st time derivative in autodifferentiable tf2. It is used to calculate the physics-informed loss. 
         Source: Ch.2.1 in https://doi.org/10.1002/qj.2974 
 
         Args:
@@ -121,29 +121,38 @@ class Lorenz96Eq():
         Computes the residual on just the large-scale variables
 
         Args:
-            x tf.Tensor(K,): Large-scale variables
-            t tf.Tensor(n_tgrid,): Time vector
+            x tf.Tensor(batch_size, K): Large-scale variables
+            t tf.Tensor(batch_size, 1): Time vector
             parametrization str: Choice of parametrization: null, polynomial, superparam, resolved
 
         Returns:
-            resx [tf.Tensor(K,)]: Residual of large-scale variables             
+            resx nvars*[tf.Tensor(batch_size,1)]: Residual of large-scale variables
         """
         # Compute target time derivates with PDEs
         # TODO: Do I need to normalize target_dx_t with dt?
         # TODO: !! make this function work for batch inputs !!
+        # Note: step() function is calculating the physics-based dx_t and has to be autodifferentiable 
         target_dx_t, target_dy_t, target_dz_t = self.step(x, y=None, z=None, parametrization=parametrization)
         target_dx_t = tf.multiply(tf.ones_like(x),target_dx_t)
         
         # Compute predicted time derivatives
-        dx_t = []
+        #dx_t = []
+        resx = []
         for k in range(self.K): # TODO calculate jacobian as matrix and not per element..
-            dx_t.append(dde.grad.jacobian(x[:,k:k+1], t))
-        dx_t = tf.stack(dx_t, axis=1)
-        dx_t = tf.squeeze(dx_t, axis=2)
+            dxk_t = dde.grad.jacobian(x[:,k:k+1], t)
+            resxk = dxk_t - target_dx_t[:,k:k+1]
+            resx.append(resxk)
+            #dx_t.append(dde.grad.jacobian(x[:,k:k+1], t))
+        #dx_t = tf.stack(dx_t, axis=1)
+        #dx_t = tf.squeeze(dx_t, axis=2)
 
-        resx = dx_t - target_dx_t
+        #resx = dx_t - target_dx_t
 
-        return [resx]
+        # Convert tensor to list of scalars
+        #resxk = []
+        #for k in (self.K)
+        #resxk.append
+        return resx
 
     def residual(self, x, y, z, t, parametrization='resolved', verbose=False): # , b, c, d, e, h
         """
@@ -217,7 +226,7 @@ class Lorenz96Eq():
 
     def solve(self, euler=False):
         """
-        Solves the equation
+        Autodifferentiable solver for Lorenz96 in tensorflow
         Source: https://github.com/ashesh6810/Data-driven-super-parametrization-with-deep-learning
 
         Args:            
@@ -228,7 +237,7 @@ class Lorenz96Eq():
             solz tf.Tensor(n_tgrid, I, J, K)]: High-resolution variables
             ]: List of solutions
         """
-
+        names = ["X", "Y", "Z"]
         if euler:
             raise NotImplementedError('Euler method not implemented for Lorenz96')
         else:
@@ -237,7 +246,7 @@ class Lorenz96Eq():
             # Initialize solution
             sol = self.nscales*[]
             for k in range(self.nscales): 
-                sol.append(tf.TensorArray(element_shape=self.shapes[k], size=self.tgrid.shape[0], dtype=tf.dtypes.float32, clear_after_read=False))
+                sol.append(tf.TensorArray(element_shape=self.shapes[k], size=self.tgrid.shape[0], dtype=tf.dtypes.float32, clear_after_read=False, name=names[k]+"_true"))
                 sol[k] = sol[k].write(0,self.sol0[k])
 
             # Calculate solution forward in time
@@ -281,15 +290,15 @@ def main():
     ################
     tf.disable_eager_execution() # Note: deepxde does not support eager
 
-    # Define temporal grid
+    # Define temporal domain
+    tmax = 1.0
+    geom = dde.geometry.TimeDomain(0., tmax) # Time step depends on tgrid 
+    # Define temporal evaluation grid
     dt = 0.005
-    tmax = 0.25
-    tgrid = np.linspace(0.,tmax, int(tmax/dt)) # TODO: remove this tgrid, set time steps same as timedomain
-    # Todo: find out what the time step is
-    geom = dde.geometry.TimeDomain(0., tmax)
+    tgrid = np.linspace(0.,tmax, int(tmax/dt))[:,np.newaxis] # This grid sets the sampling points in dde.data.PDE
 
     # Initialize ground-truth solver
-    lorenz96 = Lorenz96Eq(tgrid, plot=True)
+    lorenz96 = Lorenz96Eq(tgrid[:,0], plot=True)
 
     # Define PDE
     def pde(x, y):# , X_in):
@@ -297,36 +306,68 @@ def main():
         Compute the residual when learning NN: t -> [X_k]
 
         Args:
-            x tf.Tensor(1,): independent variable, e.g., time, t
-            y tf.Tensor(K,): Predicted variable, e.g., [X_k] or [Y_jk] 
+            x tf.Tensor(batch_size, geom.dim): independent variable, e.g., time, t
+            y tf.Tensor(batch_size, K): Predicted variable, e.g., [X_k] or [Y_jk] 
             # X_in tf.Tensor(): Auxiliary variable, e.g., [X_k]
         Returns:
             res[
-            resx tf.Tensor(K,): Residual of predicted large-scale variable
+            resx tf.Tensor(batch_size, K): Residual of predicted large-scale variable
             ]: Residuals of each predicted variable
         """
         print('in pde()')
-
+        print('return batch instead of single eval', y.shape)
         t = x
         X_k = y
-        print('t shape', t.shape)
-        print('X_k shape', X_k.shape)
+        print('t shape', t.shape, type(t))
+        print('X_k shape', X_k.shape, type(X_k))
         res = lorenz96.residualx(X_k, t, parametrization='null')
-
+        print('res shape', len(res), res[0].shape, type(res))
         return res
 
-    def solution(_):
-        return lorenz96.solve()
-
-    def boundary(_, on_initial):
-        """TODO: Find out why this fn is called boundary 
+    def solution(tgrid_nn):
         """
-        return on_initial
+        Returns ground-truth solution 
+
+        Args:
+            tgrid_nn np.array(n_tsteps, 1): Unsorted random realizations in temporal grid, defined by dde.data.PDE.train_distribution
+
+        Returns:
+            solx np.array(n_tsteps, nvars?): Solution on given temporal grid (for each variable?)
+        """
+        sol = lorenz96.solve()
+        solx = sol[0]
+        import pdb;pdb.set_trace()
+        # TODO findout by tgrid_nn contains 4 extra points for the IC
+
+        assert np.all(np.equal(tgrid_nn[:,0], lorenz96.tgrid)) 
+        sol_np = solx.eval(session=tf.compat.v1.Session())    
+        return sol_np
+
+    #X = np.empty((0, self.geom.dim))
 
     # Initial conditions, lorenz
-    icx = dde.IC(geom, lambda X: lorenz96.x0[:], boundary) # component indeces 
-    icy = dde.IC(geom, lambda X: lorenz96.y0[:,:], boundary)#, component=0)
-    icz = dde.IC(geom, lambda X: lorenz96.z0[:,:,:], boundary)#, component=1)
+    ics = []
+    for k in range(lorenz96.K):
+        ic = lorenz96.x0[k]
+        print('ic', ic)
+        ics.append(dde.IC(geom, lambda X: ic, lambda _,on_initial: on_initial, component=k))
+        #ic1 = dde.IC(geom, lambda X: -8, boundary, component=0)
+        #ic2 = dde.IC(geom, lambda X: 7, boundary, component=1)
+        #ic3 = dde.IC(geom, lambda X: 27, boundary, component=2)
+
+    # Evaluation points
+    sol = lorenz96.solve()
+    solx = sol[0].eval(session=tf.compat.v1.Session())
+    eval_pts = []
+    import pdb;pdb.set_trace
+    for k in range(lorenz96.K):
+        solxk = solx[:,k:k+1] # dim: (n_tgrid, 1)
+        eval_pts.append(dde.PointSetBC(points=tgrid, values=solxk, component=k))
+
+    all_eval_pts = ics + eval_pts
+    #icx = dde.IC(geom, lambda X: lorenz96.x0[:], boundary) # component indeces 
+    #icy = dde.IC(geom, lambda X: lorenz96.y0[:,:], boundary)#, component=0)
+    #icz = dde.IC(geom, lambda X: lorenz96.z0[:,:,:], boundary)#, component=1)
 
     # TODO: find out if I should load training data from file or define in solution() 
     # Get the train data 
@@ -339,21 +380,30 @@ def main():
     data = dde.data.PDE(
         geom,
         pde,
-        [icx, icy, icz],
-        num_domain=400, # is this #time-steps?
-        num_boundary=2,
-        solution=solution,
+        all_eval_pts, # All evaluation points with ground-truth solution
+        num_domain=0,#int(tmax/dt)-2, # num of randomly sampled evaluation points in domain
+        num_boundary=2, # num evaluation points on boundary (it's 1D so there's only left and right)?
+        anchors=tgrid, # Fixed evaluation points
+        #solution=solution, # Use if 
+        # num_test=100, # test points only work if solution fn is supplied
+        #train_distribution="uniform" # aka. grid spacing
     )
 
+    # NEXT:
+    # 1) check which exact points are used for evaluation. 
+    # 2) replace tf solve() with np solve() to generate data
+    # 3) What's plotted on every 1k epochs and why do only the first two entries converge to zero?
+    # 3) Plot loss in tensorboard not matplotlib
+
     # layer_size = [lorenz96.K] + [32] * 3 + [lorenz96.J*lorenz96.K] # NN: t, [X_k] -> [Y_jk]
-    layer_size = [1] + [32] * 1 + [lorenz96.K] # NN: t -> [X_k]
+    layer_size = [1] + [64] * 3 + [lorenz96.K] # NN: t -> [X_k]
     activation = "tanh"
     initializer = "Glorot uniform"
     net = dde.maps.FNN(layer_size, activation, initializer)
 
     model = dde.Model(data, net)
 
-    model.compile("adam", lr=0.001, metrics=["l2 relative error"])
+    model.compile("adam", lr=0.001)#, metrics=["l2 relative error"])
     losshistory, train_state = model.train(epochs=10000)
 
     dde.saveplot(losshistory, train_state, issave=True, isplot=True)
