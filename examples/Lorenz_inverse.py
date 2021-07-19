@@ -3,15 +3,25 @@ from __future__ import division
 from __future__ import print_function
 
 import numpy as np
+import requests
+import io
 
 import deepxde as dde
 from deepxde.backend import tf
 
 
-def gen_traindata():
-    data = np.load("dataset/Lorenz.npz")
-    return data["t"], data["y"]
+#def gen_traindata():
+#    data = np.load("dataset/Lorenz.npz")
+#    return data["t"], data["y"]
 
+# get training data
+def gen_traindata():
+    response = requests.get('https://github.com/lululxvi/deepxde/raw/master/examples/dataset/Lorenz.npz')
+    response.raise_for_status()
+    data = np.load(io.BytesIO(response.content))
+    print('t', data["t"].shape)
+    print('y', data["y"].shape)
+    return data["t"], data["y"]
 
 def main():
     C1 = tf.Variable(1.0)
@@ -28,6 +38,8 @@ def main():
         dy1_x = dde.grad.jacobian(y, x, i=0)
         dy2_x = dde.grad.jacobian(y, x, i=1)
         dy3_x = dde.grad.jacobian(y, x, i=2)
+        print('shap', dy1_x.shape)
+        import pdb;pdb.set_trace()
         return [
             dy1_x - C1 * (y2 - y1),
             dy2_x - y1 * (C2 - y3) + y2,
@@ -50,6 +62,7 @@ def main():
     observe_y1 = dde.PointSetBC(observe_t, ob_y[:, 1:2], component=1)
     observe_y2 = dde.PointSetBC(observe_t, ob_y[:, 2:3], component=2)
 
+    import pdb;pdb.set_trace()
     data = dde.data.PDE(
         geom,
         Lorenz_system,

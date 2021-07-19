@@ -291,7 +291,7 @@ def main():
     tf.disable_eager_execution() # Note: deepxde does not support eager
 
     # Define temporal domain
-    tmax = 1.0
+    tmax = 0.5
     geom = dde.geometry.TimeDomain(0., tmax) # Time step depends on tgrid 
     # Define temporal evaluation grid
     dt = 0.005
@@ -326,7 +326,7 @@ def main():
 
     def solution(tgrid_nn):
         """
-        Returns ground-truth solution 
+        Returns ground-truth solution at tgrid_nn locations
 
         Args:
             tgrid_nn np.array(n_tsteps, 1): Unsorted random realizations in temporal grid, defined by dde.data.PDE.train_distribution
