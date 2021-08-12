@@ -150,6 +150,7 @@ class PDE(Data):
     def train_next_batch(self, batch_size=None):
         self.train_x_all = self.train_points()
         self.train_x = self.bc_points()
+        print('train_x (should be zero)(in pde.py)', self.train_x.shape)
         if self.pde is not None:
             self.train_x = np.vstack((self.train_x, self.train_x_all))
         self.train_y = self.soln(self.train_x) if self.soln else None
@@ -222,6 +223,9 @@ class PDE(Data):
 
     @run_if_all_none("train_x_bc")
     def bc_points(self):
+        print('in bc points')
+        # print('REMOVE THIS print when all four ics are non-zero and different:', [self.bcs[k].func(10) for k in range(4)])
+        #import pdb;pdb.set_trace()
         x_bcs = [bc.collocation_points(self.train_x_all) for bc in self.bcs]
         self.num_bcs = list(map(len, x_bcs))
         self.train_x_bc = (

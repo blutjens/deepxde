@@ -390,6 +390,7 @@ def main():
     )
 
     # NEXT:
+    # 1) Reformat PointSetBC and anchors into func()
     # 1) check which exact points are used for evaluation. 
     # 2) replace tf solve() with np solve() to generate data
     # 3) What's plotted on every 1k epochs and why do only the first two entries converge to zero?

@@ -42,6 +42,16 @@ class Geometry(object):
 
     @abc.abstractmethod
     def uniform_points(self, n, boundary=True):
+        """
+        Returns uniformly distributed points from the domain
+
+        Args:
+            n int: Number of desired points
+            boundary bool: If true, includes boundary points.
+        
+        Returns:
+            points np.array((~n, self.dim)): Uniform points 
+        """
         print(
             "Warning: {}.uniform_points not implemented. Use random_points instead.".format(
                 self.idstr
